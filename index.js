@@ -91,7 +91,7 @@ client.on('messageCreate', async (message) => {
         return message.reply(response);
     }
 
-    // 2.1 Importar usuarios exclusivamente si tienen un @ (menciones o nombres con arroba)
+    // 2.1 Importar usuarios extrayendo nombres y menciones limpias
     if (content.startsWith('!importar ')) {
         const partyName = content.slice(10).trim();
         if (!partyName) {
@@ -109,29 +109,28 @@ client.on('messageCreate', async (message) => {
 
             const addedUsers = [];
 
-            // 1. Extrae las menciones reales de Discord (<@ID>)
+            // 1. Extrae las menciones reales de Discord y usa su formato interactivo (<@ID>)
             const userMentions = targetMessage.mentions.users.values();
             for (const user of userMentions) {
-                const username = user.username;
-                if (!party.members.has(username)) {
-                    party.members.add(username);
-                    addedUsers.push(username);
+                const userMentionString = `<@${user.id}>`;
+                if (!party.members.has(userMentionString)) {
+                    party.members.add(userMentionString);
+                    addedUsers.push(user.username);
                 }
             }
 
-            // 2. Busca en el texto cualquier palabra o sección que contenga '@' (ej: @Ikiguy o @Tioarturo/Tiapola)
+            // 2. Busca texto plano que tenga '@' (ej: @Ikiguy o @Tioarturo/Tiapola)
             const lines = textToParse.split('\n');
             for (const line of lines) {
                 if (line.includes('@')) {
                     const parts = line.split(':');
                     if (parts.length > 1) {
                         const namesPart = parts.slice(1).join(':').trim();
-                        // Separa por barras o espacios si vienen varios nombres con @
                         const subNames = namesPart.split(/[\/\s]+/);
 
                         for (let name of subNames) {
                             if (name.includes('@')) {
-                                cleanName = name.replace('@', '').trim();
+                                let cleanName = name.replace('@', '').trim();
                                 if (cleanName && !party.members.has(cleanName)) {
                                     party.members.add(cleanName);
                                     addedUsers.push(cleanName);
