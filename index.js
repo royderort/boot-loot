@@ -91,7 +91,7 @@ client.on('messageCreate', async (message) => {
         return message.reply(response);
     }
 
-    // 2.1 Importar usuarios extrayendo menciones y nombres de forma robusta
+    // 2.1 Importar usuarios extrayendo menciones y nombres limpios (con filtro estricto)
     if (content.startsWith('!importar ')) {
         const partyName = content.slice(10).trim();
         if (!partyName) {
@@ -109,6 +109,12 @@ client.on('messageCreate', async (message) => {
 
             const addedUsers = [];
 
+            // Lista estricta de palabras de clases, emojis o metadatos que NUNCA deben ser usuarios
+            const ignoredWords = [
+                'templar', 'tank', 'slayer', 'dps', 'arcanist', 'mage', 'arca', 'seraph', 'rm',
+                'cooldown', 'party', 'name', 'drop', 'ne', 'ankou', 'fiesta', 'ss'
+            ];
+
             // 1. Extrae las menciones reales de Discord detectadas por la API
             const userMentions = targetMessage.mentions.users;
             for (const [userId, user] of userMentions) {
@@ -119,29 +125,33 @@ client.on('messageCreate', async (message) => {
                 }
             }
 
-            // 2. Analiza líneas buscando texto plano con '@' o nombres sueltos después de los dos puntos
+            // 2. Analiza líneas buscando nombres de texto plano escritos después de los dos puntos
             const lines = textToParse.split('\n');
             for (const line of lines) {
-                if (line.includes(':')) {
-                    // Limpia emojis de Discord y menciones crudas para quedarnos con el texto del rol
-                    let cleanLine = line.replace(/<a?:\w+:\d+>/g, '').replace(/<@!?\d+>/g, '');
-                    const parts = cleanLine.split(':');
-                    
-                    if (parts.length > 1) {
-                        const namesPart = parts.slice(1).join(':').trim();
-                        const subNames = namesPart.split(/[\/\s]+/);
+                const lowerLine = line.toLowerCase().trim();
 
-                        for (let name of subNames) {
-                            name = name.replace('@', '').trim();
-                            // Si hay un nombre escrito a mano (ej: Ikiguy o Otac) que no sea una clase ni un número
-                            const ignoredWords = ['tank', 'dps', 'mage', 'arca', 'rm', 'arcanist', 'slayer', 'templar', 'seraph', 'cooldown', 'party', 'name', 'drop'];
-                            const lowerName = name.toLowerCase();
+                // Ignora líneas enteras de metadatos del reporte
+                if (lowerLine.startsWith('cooldown') || lowerLine.startsWith('party name') || lowerLine.startsWith('drop') || !line.includes(':')) {
+                    continue;
+                }
 
-                            if (name && !ignoredWords.includes(lowerName) && !/^\d+$/.test(name)) {
-                                if (!party.members.has(name)) {
-                                    party.members.add(name);
-                                    addedUsers.push(name);
-                                }
+                // Limpia emojis de Discord y menciones crudas para evaluar el texto restante
+                let cleanLine = line.replace(/<a?:\w+:\d+>/g, '').replace(/<@!?\d+>/g, '');
+                const parts = cleanLine.split(':');
+                
+                if (parts.length > 1) {
+                    const namesPart = parts.slice(1).join(':').trim();
+                    const subNames = namesPart.split(/[\/\s]+/);
+
+                    for (let name of subNames) {
+                        name = name.replace('@', '').trim();
+                        const lowerName = name.toLowerCase();
+
+                        // Valida que el texto no esté vacío, no sea un número y no sea una palabra prohibida o de clase
+                        if (name && !ignoredWords.includes(lowerName) && !/^\d+$/.test(name)) {
+                            if (!party.members.has(name)) {
+                                party.members.add(name);
+                                addedUsers.push(name);
                             }
                         }
                     }
