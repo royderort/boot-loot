@@ -1,7 +1,7 @@
 require('dotenv').config();
 const { Client, GatewayIntentBits } = require('discord.js');
 
-// --- Servidor web temporal para Render ---
+// --- Servidor web para Render ---
 const express = require('express');
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -137,25 +137,44 @@ client.on('messageCreate', async (message) => {
         return message.reply(`👥 **Integrantes de ${partyName} (${party.members.size}):** ${Array.from(party.members).join(', ')}`);
     }
 
-    // 6. Registrar un drop: !drop [nombre_party] [nombre_item] [valor]
+    // 6. Registrar drops (1 o varios): !drop [party] [cantidad x] [item] [valor_unitario]
     if (content.startsWith('!drop ')) {
         const args = content.slice(6).trim().split(' ');
         if (args.length < 3) {
-            return message.reply('Formato incorrecto. Usa: `!drop [nombre_party] [nombre_item] [valor]`');
+            return message.reply('Formato incorrecto. Usa: `!drop [nombre_party] [nombre_item] [valor]` o `!drop [nombre_party] 3x [nombre_item] [valor_unitario]`');
         }
 
         const partyName = args.shift();
         const value = parseInt(args.pop());
-        const itemName = args.join(' ');
 
         if (isNaN(value)) {
             return message.reply('El valor del ítem debe ser un número válido.');
         }
 
-        const party = getParty(guildId, partyName);
-        party.drops.push({ item: itemName, value: value, collector: message.author.username });
+        let amount = 1;
+        // Detecta si el primer argumento del nombre del ítem especifica cantidad (ej: 5x o 5X)
+        if (/^\d+[xX]$/.test(args[0])) {
+            amount = parseInt(args.shift());
+        }
 
-        return message.reply(`📦 Drop registrado en **${partyName}**: **${itemName}** por **${value.toLocaleString()}** (Obtenido por ${message.author.username})`);
+        const itemName = args.join(' ');
+        if (!itemName) {
+            return message.reply('Debes indicar el nombre del ítem.');
+        }
+
+        const party = getParty(guildId, partyName);
+        
+        // Registra los ítems según la cantidad especificada
+        for (let i = 0; i < amount; i++) {
+            party.drops.push({ item: itemName, value: value, collector: message.author.username });
+        }
+
+        const totalValue = value * amount;
+        if (amount > 1) {
+            return message.reply(`📦 Registrados **${amount}x ${itemName}** en **${partyName}** por **${value.toLocaleString()}** c/u (Total: **${totalValue.toLocaleString()}**) de ${message.author.username}`);
+        } else {
+            return message.reply(`📦 Drop registrado en **${partyName}**: **${itemName}** por **${value.toLocaleString()}** (Obtenido por ${message.author.username})`);
+        }
     }
 
     // 7. Calcular cuentas de una party: !repartir [nombre_party]
@@ -221,4 +240,4 @@ client.on('messageCreate', async (message) => {
     }
 });
 
-client.login(process.env.TOKEN);
+client.login(process.env.TOKEN);TOKEN);
