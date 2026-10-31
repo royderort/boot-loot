@@ -91,7 +91,7 @@ client.on('messageCreate', async (message) => {
         return message.reply(response);
     }
 
-    // 2.1 Importar usuarios extrayendo menciones y ignorando clases/arcanist
+    // 2.1 NUEVO: Importar usuarios desde un mensaje citado/respondido
     if (content.startsWith('!importar ')) {
         const partyName = content.slice(10).trim();
         if (!partyName) {
@@ -109,47 +109,29 @@ client.on('messageCreate', async (message) => {
 
             const addedUsers = [];
 
-            // Lista de palabras clave que el bot ignorará por completo (incluyendo Arcanist)
-            const ignoredWords = [
-                'templar', 'tank', 'slayer', 'dps', 'arcanist', 'mage', 'arca', 'seraph', 'rm',
-                'cooldown', 'party', 'name', 'drop', 'ne', 'ankou', 'fiesta', 'ss'
-            ];
-
-            // 1. Extrae las menciones reales de Discord de forma interactiva (<@ID>)
-            const userMentions = targetMessage.mentions.users;
-            for (const [userId, user] of userMentions) {
-                const mentionTag = `<@${userId}>`;
-                if (!party.members.has(mentionTag)) {
-                    party.members.add(mentionTag);
-                    addedUsers.push(user.username);
+            // Extrae menciones de usuarios de Discord directas (<@ID> o <@!ID>)
+            const userMentions = targetMessage.mentions.users.values();
+            for (const user of userMentions) {
+                const username = user.username;
+                if (!party.members.has(username)) {
+                    party.members.add(username);
+                    addedUsers.push(username);
                 }
             }
 
-            // 2. Analiza líneas buscando texto plano (ej: nombres después de dos puntos o barras)
+            // Analiza líneas con barras (ej: @Tioarturo/Tiapola/Tioficha) por si hay nombres escritos a mano
             const lines = textToParse.split('\n');
             for (const line of lines) {
-                const lowerLine = line.toLowerCase().trim();
-
-                // Ignora líneas de metadatos
-                if (lowerLine.startsWith('cooldown') || lowerLine.startsWith('party name') || lowerLine.startsWith('drop') || !line.includes(':')) {
-                    continue;
-                }
-
-                // Limpia emojis de Discord y menciones ya capturadas
-                let cleanLine = line.replace(/<a?:\w+:\d+>/g, '').replace(/<@!?\d+>/g, '');
-                const parts = cleanLine.split(':');
-                
-                if (parts.length > 1) {
-                    const namesPart = parts.slice(1).join(':').trim();
-                    const subNames = namesPart.split(/[\/\s]+/);
-
-                    for (let name of subNames) {
-                        name = name.replace('@', '').trim();
-                        const lowerName = name.toLowerCase();
-
-                        // Si el texto no está vacío, no es un número y NO está en la lista de palabras ignoradas (Arcanist, etc.)
-                        if (name && !ignoredWords.includes(lowerName) && !/^\d+$/.test(name)) {
-                            if (!party.members.has(name)) {
+                if (line.includes('/')) {
+                    // Extrae la parte posterior a los dos puntos o limpia las arrobas
+                    const cleanLine = line.replace(/<@\d+>/g, ''); // Remueve menciones técnicas si las hubiera
+                    const parts = cleanLine.split(':');
+                    if (parts.length > 1) {
+                        const namesPart = parts[1].trim();
+                        const subNames = namesPart.split('/');
+                        for (let name of subNames) {
+                            name = name.replace('@', '').trim();
+                            if (name && !party.members.has(name)) {
                                 party.members.add(name);
                                 addedUsers.push(name);
                             }
@@ -159,7 +141,7 @@ client.on('messageCreate', async (message) => {
             }
 
             if (addedUsers.length === 0) {
-                return message.reply('No se pudieron detectar usuarios válidos en el mensaje citado.');
+                return message.reply('No se pudieron detectar nuevos usuarios válidos en el mensaje citado.');
             }
 
             return message.reply(`📥 **¡Importación exitosa a ${partyName}!**\nSe añadieron: ${addedUsers.join(', ')}\nIntegrantes totales (${party.members.size}): ${Array.from(party.members).join(', ')}`);
