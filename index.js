@@ -37,9 +37,20 @@ function getParty(guildId, partyName) {
     return parties.get(partyName);
 }
 
-client.once('clientReady', () => {
+// Compatible con cualquier versión de discord.js v14
+let yaIniciado = false;
+const alIniciar = () => {
+    if (yaIniciado) return;
+    yaIniciado = true;
     console.log(`¡Bot encendido como ${client.user.tag}!`);
-});
+};
+client.once('clientReady', alIniciar);
+client.once('ready', alIniciar);
+
+// Para ver cualquier error oculto
+client.on('error', console.error);
+client.on('warn', console.warn);
+process.on('unhandledRejection', console.error);
 
 client.on('messageCreate', async (message) => {
     if (message.author.bot) return;
@@ -121,33 +132,6 @@ client.on('messageCreate', async (message) => {
                 }
             }
 
-            // Nombres escritos a mano, ej: "Tank: Juan/Pedro/Luis"
-            const lines = targetMessage.content.split('\n');
-            for (const line of lines) {
-                // Quita emojis personalizados <:nombre:id> / <a:nombre:id> y menciones
-                const cleanLine = line
-                    .replace(/<a?:\w+:\d+>/g, '')
-                    .replace(/<@!?\d+>/g, '')
-                    .trim();
-
-                // Solo líneas del tipo "Etiqueta: nombre1/nombre2"
-                const match = cleanLine.match(/^[^:]+:\s*(.+)$/);
-                if (!match) continue;
-
-                const namesPart = match[1];
-                if (!namesPart.includes('/')) continue;
-
-                for (let name of namesPart.split('/')) {
-                    name = name.replace('@', '').trim();
-                    if (!name) continue;
-                    if (party.members.has(name)) {
-                        if (!alreadyInParty.includes(name)) alreadyInParty.push(name);
-                    } else {
-                        party.members.add(name);
-                        addedUsers.push(name);
-                    }
-                }
-            }
 
             if (addedUsers.length === 0 && alreadyInParty.length === 0) {
                 return message.reply('No se encontraron usuarios válidos en el mensaje citado.');
@@ -327,4 +311,10 @@ client.on('messageCreate', async (message) => {
     }
 });
 
-client.login(process.env.TOKEN);
+if (!process.env.TOKEN) {
+    console.error('❌ Falta la variable TOKEN en Render (Environment).');
+}
+
+client.login(process.env.TOKEN)
+    .then(() => console.log('Login enviado a Discord, esperando conexión...'))
+    .catch(err => console.error('❌ Error al iniciar sesión:', err.message));
