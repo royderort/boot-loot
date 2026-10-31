@@ -1,7 +1,7 @@
 require('dotenv').config();
 const { Client, GatewayIntentBits } = require('discord.js');
 
-// --- Servidor web temporal para que Render detecte el puerto ---
+// --- Servidor web temporal para Render ---
 const express = require('express');
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -13,7 +13,7 @@ app.get('/', (req, res) => {
 app.listen(PORT, () => {
     console.log(`Servidor web escuchando en el puerto ${PORT}`);
 });
-// -------------------------------------------------------------
+// ----------------------------------------
 
 const client = new Client({
     intents: [
@@ -57,7 +57,44 @@ client.on('messageCreate', async (message) => {
         return message.reply(`¡Te has unido a la party **${partyName}**! Integrantes actuales (${party.members.size}): ${Array.from(party.members).join(', ')}`);
     }
 
-    // 2. Registrar un drop: !drop [nombre_party] [nombre_item] [valor]
+    // 2. Salir de una party: !salir [nombre_party]
+    if (content.startsWith('!salir ')) {
+        const partyName = content.slice(7).trim();
+        if (!partyName) return message.reply('Debes indicar el nombre de la party de la que deseas salir. Ejemplo: `!salir RaidBoss`');
+
+        const parties = serverParties.get(guildId);
+        if (!parties || !parties.has(partyName)) {
+            return message.reply(`La party **${partyName}** no existe.`);
+        }
+
+        const party = parties.get(partyName);
+        if (!party.members.has(message.author.username)) {
+            return message.reply(`No estás registrado en la party **${partyName}**.`);
+        }
+
+        party.members.delete(message.author.username);
+        return message.reply(`Has salido de la party **${partyName}**. Integrantes restantes (${party.members.size}): ${party.members.size > 0 ? Array.from(party.members).join(', ') : 'Ninguno'}`);
+    }
+
+    // 3. Ver miembros de una party: !miembros [nombre_party]
+    if (content.startsWith('!miembros ')) {
+        const partyName = content.slice(10).trim();
+        if (!partyName) return message.reply('Debes indicar el nombre de la party. Ejemplo: `!miembros RaidBoss`');
+
+        const parties = serverParties.get(guildId);
+        if (!parties || !parties.has(partyName)) {
+            return message.reply(`La party **${partyName}** no existe.`);
+        }
+
+        const party = parties.get(partyName);
+        if (party.members.size === 0) {
+            return message.reply(`No hay miembros en la party **${partyName}** actualmente.`);
+        }
+
+        return message.reply(`👥 **Integrantes de ${partyName} (${party.members.size}):** ${Array.from(party.members).join(', ')}`);
+    }
+
+    // 4. Registrar un drop: !drop [nombre_party] [nombre_item] [valor]
     if (content.startsWith('!drop ')) {
         const args = content.slice(6).trim().split(' ');
         if (args.length < 3) {
@@ -78,7 +115,7 @@ client.on('messageCreate', async (message) => {
         return message.reply(`📦 Drop registrado en **${partyName}**: **${itemName}** por **${value.toLocaleString()}** (Obtenido por ${message.author.username})`);
     }
 
-    // 3. Calcular cuentas de una party: !repartir [nombre_party]
+    // 5. Calcular cuentas de una party: !repartir [nombre_party]
     if (content.startsWith('!repartir ')) {
         const partyName = content.slice(10).trim();
         if (!partyName) return message.reply('Debes indicar el nombre de la party a repartir. Ejemplo: `!repartir RaidBoss`');
@@ -93,7 +130,7 @@ client.on('messageCreate', async (message) => {
             return message.reply(`No hay miembros registrados en la party **${partyName}**.`);
         }
         if (party.drops.length === 0) {
-            return message.reply(`No hay drops registrados en la party **${partyName}**.`);
+            return message.reply(`No drops registrados en la party **${partyName}**.`);
         }
 
         let totalValue = party.drops.reduce((sum, drop) => sum + drop.value, 0);
@@ -112,7 +149,7 @@ client.on('messageCreate', async (message) => {
         return message.channel.send(report);
     }
 
-    // 4. Listar partys activas: !listpartys
+    // 6. Listar partys activas: !listpartys
     if (content === '!listpartys') {
         const parties = serverParties.get(guildId);
         if (!parties || parties.size === 0) {
@@ -127,7 +164,7 @@ client.on('messageCreate', async (message) => {
         return message.reply(listMsg);
     }
 
-    // 5. Borrar una party específica: !resetparty [nombre_party]
+    // 7. Borrar una party específica: !resetparty [nombre_party]
     if (content.startsWith('!resetparty ')) {
         const partyName = content.slice(12).trim();
         const parties = serverParties.get(guildId);
@@ -140,5 +177,7 @@ client.on('messageCreate', async (message) => {
         }
     }
 });
+
+client.login(process.env.TOKEN);
 
 client.login(process.env.TOKEN);
