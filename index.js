@@ -1,43 +1,331 @@
-if (content.startsWith('!importar ')) {
-    const partyName = content.slice(10).trim();
-    if (!partyName) {
-        return message.reply('Debes indicar el nombre de la party. Ejemplo: `!importar NE_ANKOU_FIESTA` respondiendo al mensaje.');
+require('dotenv').config();
+const { Client, GatewayIntentBits } = require('discord.js');
+
+// --- Servidor web para Render ---
+const express = require('express');
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+app.get('/', (req, res) => {
+    res.send('¡El bot de loot de Discord está activo y funcionando!');
+});
+
+app.listen(PORT, () => {
+    console.log(`Servidor web escuchando en el puerto ${PORT}`);
+});
+// ----------------------------------------
+
+const client = new Client({
+    intents: [
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.MessageContent,
+    ]
+});
+
+// Estructura: guildId => Map(partyName => { members: Set(), drops: [] })
+const serverParties = new Map();
+
+function getParty(guildId, partyName) {
+    if (!serverParties.has(guildId)) {
+        serverParties.set(guildId, new Map());
+    }
+    const parties = serverParties.get(guildId);
+    if (!parties.has(partyName)) {
+        parties.set(partyName, { members: new Set(), drops: [] });
+    }
+    return parties.get(partyName);
+}
+
+client.once('clientReady', () => {
+    console.log(`¡Bot encendido como ${client.user.tag}!`);
+});
+
+client.on('messageCreate', async (message) => {
+    if (message.author.bot) return;
+
+    const content = message.content;
+    const guildId = message.guild.id;
+
+    // 1. Unirse uno mismo: !unirse [nombre_party]
+    if (content.startsWith('!unirse ')) {
+        const partyName = content.slice(8).trim();
+        if (!partyName) return message.reply('Debes indicar el nombre de la party. Ejemplo: `!unirse RaidBoss`');
+
+        const party = getParty(guildId, partyName);
+        party.members.add(message.author.username);
+        return message.reply(`¡Te has unido a la party **${partyName}**! Integrantes actuales (${party.members.size}): ${Array.from(party.members).join(', ')}`);
     }
 
-    if (!message.reference) {
-        return message.reply('Debes **responder (reply)** al mensaje que contiene la lista de usuarios para poder importarlos.');
-    }
+    // 2. Agregar uno o varios usuarios: !agregar [nombre_party] [usuario1] [usuario2] ...
+    if (content.startsWith('!agregar ')) {
+        const args = content.slice(9).trim().split(/\s+/);
+        if (args.length < 2) {
+            return message.reply('Formato incorrecto. Usa: `!agregar [nombre_party] [usuario1] [usuario2] ...`');
+        }
 
-    try {
-        const targetMessage = await message.channel.messages.fetch(message.reference.messageId);
+        const partyName = args.shift();
         const party = getParty(guildId, partyName);
 
         const addedUsers = [];
         const alreadyInParty = [];
 
-        for (const user of targetMessage.mentions.users.values()) {
-            if (user.bot) continue; // ignora bots
-            const username = user.username;
-            if (party.members.has(username)) {
-                alreadyInParty.push(username);
+        for (const user of args) {
+            if (party.members.has(user)) {
+                alreadyInParty.push(user);
             } else {
-                party.members.add(username);
-                addedUsers.push(username);
+                party.members.add(user);
+                addedUsers.push(user);
             }
         }
 
-        if (addedUsers.length === 0 && alreadyInParty.length === 0) {
-            return message.reply('No se encontraron menciones de usuarios en el mensaje citado.');
+        let response = '';
+        if (addedUsers.length > 0) {
+            response += `➕ Agregado(s) a **${partyName}**: **${addedUsers.join(', ')}**.\n`;
+        }
+        if (alreadyInParty.length > 0) {
+            response += `⚠️ Ya estaban en la party: **${alreadyInParty.join(', ')}**.\n`;
         }
 
-        let response = `📥 **Importación a ${partyName}**\n`;
-        if (addedUsers.length > 0) response += `➕ Añadidos: ${addedUsers.join(', ')}\n`;
-        if (alreadyInParty.length > 0) response += `⚠️ Ya estaban: ${alreadyInParty.join(', ')}\n`;
-        response += `Integrantes totales (${party.members.size}): ${Array.from(party.members).join(', ')}`;
+        response += `Integrantes actuales (${party.members.size}): ${Array.from(party.members).join(', ')}`;
         return message.reply(response);
-
-    } catch (error) {
-        console.error(error);
-        return message.reply('Hubo un error al intentar leer el mensaje citado.');
     }
+
+    // 2.1 Importar usuarios desde un mensaje citado/respondido
+    if (content.startsWith('!importar ')) {
+        const partyName = content.slice(10).trim();
+        if (!partyName) {
+            return message.reply('Debes indicar el nombre de la party. Ejemplo: `!importar NE_ANKOU_FIESTA` respondiendo al mensaje.');
+        }
+
+        if (!message.reference) {
+            return message.reply('Debes **responder (reply)** al mensaje que contiene la lista de usuarios para poder importarlos.');
+        }
+
+        try {
+            const targetMessage = await message.channel.messages.fetch(message.reference.messageId);
+            const party = getParty(guildId, partyName);
+
+            const addedUsers = [];
+            const alreadyInParty = [];
+
+            // Menciones reales de Discord (<@ID>)
+            for (const user of targetMessage.mentions.users.values()) {
+                if (user.bot) continue; // ignora bots
+                const username = user.username;
+                if (party.members.has(username)) {
+                    alreadyInParty.push(username);
+                } else {
+                    party.members.add(username);
+                    addedUsers.push(username);
+                }
+            }
+
+            // Nombres escritos a mano, ej: "Tank: Juan/Pedro/Luis"
+            const lines = targetMessage.content.split('\n');
+            for (const line of lines) {
+                // Quita emojis personalizados <:nombre:id> / <a:nombre:id> y menciones
+                const cleanLine = line
+                    .replace(/<a?:\w+:\d+>/g, '')
+                    .replace(/<@!?\d+>/g, '')
+                    .trim();
+
+                // Solo líneas del tipo "Etiqueta: nombre1/nombre2"
+                const match = cleanLine.match(/^[^:]+:\s*(.+)$/);
+                if (!match) continue;
+
+                const namesPart = match[1];
+                if (!namesPart.includes('/')) continue;
+
+                for (let name of namesPart.split('/')) {
+                    name = name.replace('@', '').trim();
+                    if (!name) continue;
+                    if (party.members.has(name)) {
+                        if (!alreadyInParty.includes(name)) alreadyInParty.push(name);
+                    } else {
+                        party.members.add(name);
+                        addedUsers.push(name);
+                    }
+                }
+            }
+
+            if (addedUsers.length === 0 && alreadyInParty.length === 0) {
+                return message.reply('No se encontraron usuarios válidos en el mensaje citado.');
+            }
+
+            let response = `📥 **Importación a ${partyName}**\n`;
+            if (addedUsers.length > 0) response += `➕ Añadidos: ${addedUsers.join(', ')}\n`;
+            if (alreadyInParty.length > 0) response += `⚠️ Ya estaban: ${alreadyInParty.join(', ')}\n`;
+            response += `Integrantes totales (${party.members.size}): ${Array.from(party.members).join(', ')}`;
+            return message.reply(response);
+
+        } catch (error) {
+            console.error(error);
+            return message.reply('Hubo un error al intentar leer el mensaje citado.');
+        }
+    }
+
+    // 3. Salirse uno mismo: !salir [nombre_party]
+    if (content.startsWith('!salir ')) {
+        const partyName = content.slice(7).trim();
+        if (!partyName) return message.reply('Debes indicar el nombre de la party de la que deseas salir. Ejemplo: `!salir RaidBoss`');
+
+        const parties = serverParties.get(guildId);
+        if (!parties || !parties.has(partyName)) {
+            return message.reply(`La party **${partyName}** no existe.`);
+        }
+
+        const party = parties.get(partyName);
+        if (!party.members.has(message.author.username)) {
+            return message.reply(`No estás registrado en la party **${partyName}**.`);
+        }
+
+        party.members.delete(message.author.username);
+        return message.reply(`Has salido de la party **${partyName}**. Integrantes restantes (${party.members.size}): ${party.members.size > 0 ? Array.from(party.members).join(', ') : 'Ninguno'}`);
+    }
+
+    // 4. Expulsar a otro usuario: !expulsar [nombre_party] [nombre_usuario]
+    if (content.startsWith('!expulsar ')) {
+        const args = content.slice(10).trim().split(/\s+/);
+        if (args.length < 2) {
+            return message.reply('Formato incorrecto. Usa: `!expulsar [nombre_party] [nombre_usuario]`');
+        }
+
+        const partyName = args.shift();
+        const targetUser = args.join(' ');
+
+        const parties = serverParties.get(guildId);
+        if (!parties || !parties.has(partyName)) {
+            return message.reply(`La party **${partyName}** no existe.`);
+        }
+
+        const party = parties.get(partyName);
+        if (!party.members.has(targetUser)) {
+            return message.reply(`El usuario **${targetUser}** no se encuentra en la party **${partyName}**.`);
+        }
+
+        party.members.delete(targetUser);
+        return message.reply(`👢 El usuario **${targetUser}** ha sido expulsado de la party **${partyName}**. Integrantes restantes (${party.members.size}): ${party.members.size > 0 ? Array.from(party.members).join(', ') : 'Ninguno'}`);
+    }
+
+    // 5. Ver miembros de una party: !miembros [nombre_party]
+    if (content.startsWith('!miembros ')) {
+        const partyName = content.slice(10).trim();
+        if (!partyName) return message.reply('Debes indicar el nombre de la party. Ejemplo: `!miembros RaidBoss`');
+
+        const parties = serverParties.get(guildId);
+        if (!parties || !parties.has(partyName)) {
+            return message.reply(`La party **${partyName}** no existe.`);
+        }
+
+        const party = parties.get(partyName);
+        if (party.members.size === 0) {
+            return message.reply(`No hay miembros en la party **${partyName}** actualmente.`);
+        }
+
+        return message.reply(`👥 **Integrantes de ${partyName} (${party.members.size}):** ${Array.from(party.members).join(', ')}`);
+    }
+
+    // 6. Registrar drops (1 o varios): !drop [party] [cantidad x] [item] [valor_unitario]
+    if (content.startsWith('!drop ')) {
+        const args = content.slice(6).trim().split(/\s+/);
+        if (args.length < 3) {
+            return message.reply('Formato incorrecto. Usa: `!drop [nombre_party] [nombre_item] [valor]` o `!drop [nombre_party] 3x [nombre_item] [valor_unitario]`');
+        }
+
+        const partyName = args.shift();
+        const value = parseInt(args.pop());
+
+        if (isNaN(value)) {
+            return message.reply('El valor del ítem debe ser un número válido.');
+        }
+
+        let amount = 1;
+        if (/^\d+[xX]$/.test(args[0])) {
+            amount = parseInt(args.shift());
+        }
+
+        const itemName = args.join(' ');
+        if (!itemName) {
+            return message.reply('Debes indicar el nombre del ítem.');
+        }
+
+        const party = getParty(guildId, partyName);
+
+        for (let i = 0; i < amount; i++) {
+            party.drops.push({ item: itemName, value: value, collector: message.author.username });
+        }
+
+        const totalValue = value * amount;
+        if (amount > 1) {
+            return message.reply(`📦 Registrados **${amount}x ${itemName}** en **${partyName}** por **${value.toLocaleString()}** c/u (Total: **${totalValue.toLocaleString()}**) de ${message.author.username}`);
+        } else {
+            return message.reply(`📦 Drop registrado en **${partyName}**: **${itemName}** por **${value.toLocaleString()}** (Obtenido por ${message.author.username})`);
+        }
+    }
+
+    // 7. Calcular cuentas de una party: !repartir [nombre_party]
+    if (content.startsWith('!repartir ')) {
+        const partyName = content.slice(10).trim();
+        if (!partyName) return message.reply('Debes indicar el nombre de la party a repartir. Ejemplo: `!repartir RaidBoss`');
+
+        const parties = serverParties.get(guildId);
+        if (!parties || !parties.has(partyName)) {
+            return message.reply(`La party **${partyName}** no existe o no tiene datos registrados.`);
+        }
+
+        const party = parties.get(partyName);
+        if (party.members.size === 0) {
+            return message.reply(`No hay miembros registrados en la party **${partyName}**.`);
+        }
+        if (party.drops.length === 0) {
+            return message.reply(`No hay drops registrados en la party **${partyName}**.`);
+        }
+
+        let totalValue = party.drops.reduce((sum, drop) => sum + drop.value, 0);
+        let memberCount = party.members.size;
+        let sharePerPerson = Math.floor(totalValue / memberCount);
+
+        let report = `💰 **Reporte de Loot: ${partyName}** 💰\n`;
+        report += `• **Valor Total:** ${totalValue.toLocaleString()}\n`;
+        report += `• **Integrantes (${memberCount}):** ${Array.from(party.members).join(', ')}\n`;
+        report += `• **A cada uno le corresponde:** **${sharePerPerson.toLocaleString()}**\n\n`;
+        report += `_Detalle de Drops_:\n`;
+        party.drops.forEach(d => {
+            report += `- ${d.item}: ${d.value.toLocaleString()} (${d.collector})\n`;
+        });
+
+        return message.channel.send(report);
+    }
+
+    // 8. Listar partys activas: !listpartys
+    if (content === '!listpartys') {
+        const parties = serverParties.get(guildId);
+        if (!parties || parties.size === 0) {
+            return message.reply('No hay partys activas en este servidor.');
+        }
+
+        let listMsg = `📋 **Partys Activas en el Servidor** 📋\n`;
+        parties.forEach((data, name) => {
+            listMsg += `- **${name}**: ${data.members.size} miembros, ${data.drops.length} drops\n`;
+        });
+
+        return message.reply(listMsg);
+    }
+
+    // 9. Borrar una party específica: !resetparty [nombre_party]
+    if (content.startsWith('!resetparty ')) {
+        const partyName = content.slice(12).trim();
+        const parties = serverParties.get(guildId);
+
+        if (parties && parties.has(partyName)) {
+            parties.delete(partyName);
+            return message.reply(`🔄 La party **${partyName}** ha sido eliminada y reiniciada.`);
+        } else {
+            return message.reply(`La party **${partyName}** no fue encontrada.`);
+        }
+    }
+});
+
+client.login(process.env.TOKEN);
 }
