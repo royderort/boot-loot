@@ -4,14 +4,14 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node index.js"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
-    "discord.js": "^14.28.0",
-    "dotenv": "^18.0.9"
+    "discord.js": "^14.x.x",
+    "dotenv": "^16.x.x"
   }
 }
