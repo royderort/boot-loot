@@ -91,7 +91,7 @@ client.on('messageCreate', async (message) => {
         return message.reply(response);
     }
 
-    // 2.1 Importar usuarios desde un mensaje citado/respondido (Con filtro de clases y emojis)
+    // 2.1 Importar usuarios exclusivamente si tienen un @ (menciones o nombres con arroba)
     if (content.startsWith('!importar ')) {
         const partyName = content.slice(10).trim();
         if (!partyName) {
@@ -109,10 +109,7 @@ client.on('messageCreate', async (message) => {
 
             const addedUsers = [];
 
-            // Lista de palabras clave de clases/roles que el bot debe ignorar por completo
-            const ignoredWords = ['tank', 'dps', 'mage', 'arca', 'rm', 'arcanist', 'slayer', 'templar', 'seraph', 'cooldown', 'party', 'name', 'drop'];
-
-            // Extrae menciones de usuarios de Discord directas (<@ID>)
+            // 1. Extrae las menciones reales de Discord (<@ID>)
             const userMentions = targetMessage.mentions.users.values();
             for (const user of userMentions) {
                 const username = user.username;
@@ -122,28 +119,22 @@ client.on('messageCreate', async (message) => {
                 }
             }
 
-            // Analiza líneas del mensaje
+            // 2. Busca en el texto cualquier palabra o sección que contenga '@' (ej: @Ikiguy o @Tioarturo/Tiapola)
             const lines = textToParse.split('\n');
             for (const line of lines) {
-                if (line.includes(':')) {
-                    // Limpia emojis personalizados de Discord estilo <:Nombre:123456> y etiquetas de mención
-                    let cleanLine = line.replace(/<a?:\w+:\d+>/g, '').replace(/<@\d+>/g, '');
-                    const parts = cleanLine.split(':');
-                    
+                if (line.includes('@')) {
+                    const parts = line.split(':');
                     if (parts.length > 1) {
-                        const namesPart = parts.slice(1).join(':').trim(); // Une por si hay más de dos puntos
-                        // Divide por barras '/' o espacios si vienen varios nombres
+                        const namesPart = parts.slice(1).join(':').trim();
+                        // Separa por barras o espacios si vienen varios nombres con @
                         const subNames = namesPart.split(/[\/\s]+/);
 
                         for (let name of subNames) {
-                            name = name.replace('@', '').trim();
-                            const lowerName = name.toLowerCase();
-
-                            // Valida que el nombre exista, no sea un número, y no esté en la lista de palabras ignoradas
-                            if (name && !ignoredWords.includes(lowerName) && ! /^\d+$/.test(name)) {
-                                if (!party.members.has(name)) {
-                                    party.members.add(name);
-                                    addedUsers.push(name);
+                            if (name.includes('@')) {
+                                cleanName = name.replace('@', '').trim();
+                                if (cleanName && !party.members.has(cleanName)) {
+                                    party.members.add(cleanName);
+                                    addedUsers.push(cleanName);
                                 }
                             }
                         }
@@ -152,7 +143,7 @@ client.on('messageCreate', async (message) => {
             }
 
             if (addedUsers.length === 0) {
-                return message.reply('No se pudieron detectar nuevos usuarios válidos en el mensaje citado.');
+                return message.reply('No se pudieron detectar usuarios con `@` en el mensaje citado.');
             }
 
             return message.reply(`📥 **¡Importación exitosa a ${partyName}!**\nSe añadieron: ${addedUsers.join(', ')}\nIntegrantes totales (${party.members.size}): ${Array.from(party.members).join(', ')}`);
@@ -326,4 +317,3 @@ client.on('messageCreate', async (message) => {
 });
 
 client.login(process.env.TOKEN);
-
