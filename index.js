@@ -91,6 +91,67 @@ client.on('messageCreate', async (message) => {
         return message.reply(response);
     }
 
+    // 2.1 NUEVO: Importar usuarios desde un mensaje citado/respondido
+    if (content.startsWith('!importar ')) {
+        const partyName = content.slice(10).trim();
+        if (!partyName) {
+            return message.reply('Debes indicar el nombre de la party. Ejemplo: `!importar NE_ANKOU_FIESTA` respondiendo al mensaje.');
+        }
+
+        if (!message.reference) {
+            return message.reply('Debes **responder (reply)** al mensaje que contiene la lista de usuarios para poder importarlos.');
+        }
+
+        try {
+            const targetMessage = await message.channel.messages.fetch(message.reference.messageId);
+            const textToParse = targetMessage.content;
+            const party = getParty(guildId, partyName);
+
+            const addedUsers = [];
+
+            // Extrae menciones de usuarios de Discord directas (<@ID> o <@!ID>)
+            const userMentions = targetMessage.mentions.users.values();
+            for (const user of userMentions) {
+                const username = user.username;
+                if (!party.members.has(username)) {
+                    party.members.add(username);
+                    addedUsers.push(username);
+                }
+            }
+
+            // Analiza líneas con barras (ej: @Tioarturo/Tiapola/Tioficha) por si hay nombres escritos a mano
+            const lines = textToParse.split('\n');
+            for (const line of lines) {
+                if (line.includes('/')) {
+                    // Extrae la parte posterior a los dos puntos o limpia las arrobas
+                    const cleanLine = line.replace(/<@\d+>/g, ''); // Remueve menciones técnicas si las hubiera
+                    const parts = cleanLine.split(':');
+                    if (parts.length > 1) {
+                        const namesPart = parts[1].trim();
+                        const subNames = namesPart.split('/');
+                        for (let name of subNames) {
+                            name = name.replace('@', '').trim();
+                            if (name && !party.members.has(name)) {
+                                party.members.add(name);
+                                addedUsers.push(name);
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (addedUsers.length === 0) {
+                return message.reply('No se pudieron detectar nuevos usuarios válidos en el mensaje citado.');
+            }
+
+            return message.reply(`📥 **¡Importación exitosa a ${partyName}!**\nSe añadieron: ${addedUsers.join(', ')}\nIntegrantes totales (${party.members.size}): ${Array.from(party.members).join(', ')}`);
+
+        } catch (error) {
+            console.error(error);
+            return message.reply('Hubo un error al intentar leer el mensaje citado.');
+        }
+    }
+
     // 3. Salirse uno mismo: !salir [nombre_party]
     if (content.startsWith('!salir ')) {
         const partyName = content.slice(7).trim();
@@ -252,5 +313,7 @@ client.on('messageCreate', async (message) => {
         }
     }
 });
+
+client.login(process.env.TOKEN);
 
 client.login(process.env.TOKEN);
