@@ -1,6 +1,20 @@
 require('dotenv').config();
 const { Client, GatewayIntentBits } = require('discord.js');
 
+// --- Servidor web temporal para que Render detecte el puerto ---
+const express = require('express');
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+app.get('/', (req, res) => {
+    res.send('¡El bot de loot de Discord está activo y funcionando!');
+});
+
+app.listen(PORT, () => {
+    console.log(`Servidor web escuchando en el puerto ${PORT}`);
+});
+// -------------------------------------------------------------
+
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
@@ -12,7 +26,6 @@ const client = new Client({
 // Estructura: guildId => Map(partyName => { members: Set(), drops: [] })
 const serverParties = new Map();
 
-// Función auxiliar para obtener o crear una party automáticamente
 function getParty(guildId, partyName) {
     if (!serverParties.has(guildId)) {
         serverParties.set(guildId, new Map());
@@ -45,7 +58,6 @@ client.on('messageCreate', async (message) => {
     }
 
     // 2. Registrar un drop: !drop [nombre_party] [nombre_item] [valor]
-    // Ejemplo: !drop RaidBoss Espada Magica 1500000
     if (content.startsWith('!drop ')) {
         const args = content.slice(6).trim().split(' ');
         if (args.length < 3) {
@@ -100,7 +112,7 @@ client.on('messageCreate', async (message) => {
         return message.channel.send(report);
     }
 
-    // 4. Listar partys activas en el servidor: !listpartys
+    // 4. Listar partys activas: !listpartys
     if (content === '!listpartys') {
         const parties = serverParties.get(guildId);
         if (!parties || parties.size === 0) {
