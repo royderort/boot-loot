@@ -37,20 +37,9 @@ function getParty(guildId, partyName) {
     return parties.get(partyName);
 }
 
-// Compatible con cualquier versión de discord.js v14
-let yaIniciado = false;
-const alIniciar = () => {
-    if (yaIniciado) return;
-    yaIniciado = true;
+client.once('clientReady', () => {
     console.log(`¡Bot encendido como ${client.user.tag}!`);
-};
-client.once('clientReady', alIniciar);
-client.once('ready', alIniciar);
-
-// Para ver cualquier error oculto
-client.on('error', console.error);
-client.on('warn', console.warn);
-process.on('unhandledRejection', console.error);
+});
 
 client.on('messageCreate', async (message) => {
     if (message.author.bot) return;
@@ -102,7 +91,7 @@ client.on('messageCreate', async (message) => {
         return message.reply(response);
     }
 
-    // 2.1 Importar usuarios desde un mensaje citado/respondido
+    // 2.1 NUEVO: Importar usuarios desde un mensaje citado/respondido
     if (content.startsWith('!importar ')) {
         const partyName = content.slice(10).trim();
         if (!partyName) {
@@ -115,33 +104,47 @@ client.on('messageCreate', async (message) => {
 
         try {
             const targetMessage = await message.channel.messages.fetch(message.reference.messageId);
+            const textToParse = targetMessage.content;
             const party = getParty(guildId, partyName);
 
             const addedUsers = [];
-            const alreadyInParty = [];
 
-            // Menciones reales de Discord (<@ID>)
-            for (const user of targetMessage.mentions.users.values()) {
-                if (user.bot) continue; // ignora bots
+            // Extrae menciones de usuarios de Discord directas (<@ID> o <@!ID>)
+            const userMentions = targetMessage.mentions.users.values();
+            for (const user of userMentions) {
                 const username = user.username;
-                if (party.members.has(username)) {
-                    alreadyInParty.push(username);
-                } else {
+                if (!party.members.has(username)) {
                     party.members.add(username);
                     addedUsers.push(username);
                 }
             }
 
-
-            if (addedUsers.length === 0 && alreadyInParty.length === 0) {
-                return message.reply('No se encontraron usuarios válidos en el mensaje citado.');
+            // Analiza líneas con barras (ej: @Tioarturo/Tiapola/Tioficha) por si hay nombres escritos a mano
+            const lines = textToParse.split('\n');
+            for (const line of lines) {
+                if (line.includes('/')) {
+                    // Extrae la parte posterior a los dos puntos o limpia las arrobas
+                    const cleanLine = line.replace(/<@\d+>/g, ''); // Remueve menciones técnicas si las hubiera
+                    const parts = cleanLine.split(':');
+                    if (parts.length > 1) {
+                        const namesPart = parts[1].trim();
+                        const subNames = namesPart.split('/');
+                        for (let name of subNames) {
+                            name = name.replace('@', '').trim();
+                            if (name && !party.members.has(name)) {
+                                party.members.add(name);
+                                addedUsers.push(name);
+                            }
+                        }
+                    }
+                }
             }
 
-            let response = `📥 **Importación a ${partyName}**\n`;
-            if (addedUsers.length > 0) response += `➕ Añadidos: ${addedUsers.join(', ')}\n`;
-            if (alreadyInParty.length > 0) response += `⚠️ Ya estaban: ${alreadyInParty.join(', ')}\n`;
-            response += `Integrantes totales (${party.members.size}): ${Array.from(party.members).join(', ')}`;
-            return message.reply(response);
+            if (addedUsers.length === 0) {
+                return message.reply('No se pudieron detectar nuevos usuarios válidos en el mensaje citado.');
+            }
+
+            return message.reply(`📥 **¡Importación exitosa a ${partyName}!**\nSe añadieron: ${addedUsers.join(', ')}\nIntegrantes totales (${party.members.size}): ${Array.from(party.members).join(', ')}`);
 
         } catch (error) {
             console.error(error);
@@ -235,7 +238,7 @@ client.on('messageCreate', async (message) => {
         }
 
         const party = getParty(guildId, partyName);
-
+        
         for (let i = 0; i < amount; i++) {
             party.drops.push({ item: itemName, value: value, collector: message.author.username });
         }
@@ -301,7 +304,7 @@ client.on('messageCreate', async (message) => {
     if (content.startsWith('!resetparty ')) {
         const partyName = content.slice(12).trim();
         const parties = serverParties.get(guildId);
-
+        
         if (parties && parties.has(partyName)) {
             parties.delete(partyName);
             return message.reply(`🔄 La party **${partyName}** ha sido eliminada y reiniciada.`);
@@ -311,10 +314,4 @@ client.on('messageCreate', async (message) => {
     }
 });
 
-if (!process.env.TOKEN) {
-    console.error('❌ Falta la variable TOKEN en Render (Environment).');
-}
-
-client.login(process.env.TOKEN)
-    .then(() => console.log('Login enviado a Discord, esperando conexión...'))
-    .catch(err => console.error('❌ Error al iniciar sesión:', err.message));
+client.login(process.env.TOKEN);
