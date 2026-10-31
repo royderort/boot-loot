@@ -240,4 +240,4 @@ client.on('messageCreate', async (message) => {
     }
 });
 
-client.login(process.env.TOKEN);TOKEN);
+client.login(process.env.TOKEN);OKEN);
