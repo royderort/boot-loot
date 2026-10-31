@@ -91,7 +91,7 @@ client.on('messageCreate', async (message) => {
         return message.reply(response);
     }
 
-    // 2.1 NUEVO: Importar usuarios desde un mensaje citado/respondido
+    // 2.1 Importar usuarios desde un mensaje citado/respondido (Con filtro de clases y emojis)
     if (content.startsWith('!importar ')) {
         const partyName = content.slice(10).trim();
         if (!partyName) {
@@ -109,7 +109,10 @@ client.on('messageCreate', async (message) => {
 
             const addedUsers = [];
 
-            // Extrae menciones de usuarios de Discord directas (<@ID> o <@!ID>)
+            // Lista de palabras clave de clases/roles que el bot debe ignorar por completo
+            const ignoredWords = ['tank', 'dps', 'mage', 'arca', 'rm', 'arcanist', 'slayer', 'templar', 'seraph', 'cooldown', 'party', 'name', 'drop'];
+
+            // Extrae menciones de usuarios de Discord directas (<@ID>)
             const userMentions = targetMessage.mentions.users.values();
             for (const user of userMentions) {
                 const username = user.username;
@@ -119,21 +122,29 @@ client.on('messageCreate', async (message) => {
                 }
             }
 
-            // Analiza líneas con barras (ej: @Tioarturo/Tiapola/Tioficha) por si hay nombres escritos a mano
+            // Analiza líneas del mensaje
             const lines = textToParse.split('\n');
             for (const line of lines) {
-                if (line.includes('/')) {
-                    // Extrae la parte posterior a los dos puntos o limpia las arrobas
-                    const cleanLine = line.replace(/<@\d+>/g, ''); // Remueve menciones técnicas si las hubiera
+                if (line.includes(':')) {
+                    // Limpia emojis personalizados de Discord estilo <:Nombre:123456> y etiquetas de mención
+                    let cleanLine = line.replace(/<a?:\w+:\d+>/g, '').replace(/<@\d+>/g, '');
                     const parts = cleanLine.split(':');
+                    
                     if (parts.length > 1) {
-                        const namesPart = parts[1].trim();
-                        const subNames = namesPart.split('/');
+                        const namesPart = parts.slice(1).join(':').trim(); // Une por si hay más de dos puntos
+                        // Divide por barras '/' o espacios si vienen varios nombres
+                        const subNames = namesPart.split(/[\/\s]+/);
+
                         for (let name of subNames) {
                             name = name.replace('@', '').trim();
-                            if (name && !party.members.has(name)) {
-                                party.members.add(name);
-                                addedUsers.push(name);
+                            const lowerName = name.toLowerCase();
+
+                            // Valida que el nombre exista, no sea un número, y no esté en la lista de palabras ignoradas
+                            if (name && !ignoredWords.includes(lowerName) && ! /^\d+$/.test(name)) {
+                                if (!party.members.has(name)) {
+                                    party.members.add(name);
+                                    addedUsers.push(name);
+                                }
                             }
                         }
                     }
@@ -315,4 +326,3 @@ client.on('messageCreate', async (message) => {
 });
 
 client.login(process.env.TOKEN);
-
