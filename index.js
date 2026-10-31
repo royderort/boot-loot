@@ -57,23 +57,38 @@ client.on('messageCreate', async (message) => {
         return message.reply(`¡Te has unido a la party **${partyName}**! Integrantes actuales (${party.members.size}): ${Array.from(party.members).join(', ')}`);
     }
 
-    // 2. Agregar a otro usuario: !agregar [nombre_party] [nombre_usuario]
+    // 2. Agregar uno o varios usuarios: !agregar [nombre_party] [usuario1] [usuario2] ...
     if (content.startsWith('!agregar ')) {
-        const args = content.slice(9).trim().split(' ');
+        const args = content.slice(9).trim().split(/\s+/);
         if (args.length < 2) {
-            return message.reply('Formato incorrecto. Usa: `!agregar [nombre_party] [nombre_usuario]`');
+            return message.reply('Formato incorrecto. Usa: `!agregar [nombre_party] [usuario1] [usuario2] ...`');
         }
 
         const partyName = args.shift();
-        const targetUser = args.join(' ');
-
         const party = getParty(guildId, partyName);
-        if (party.members.has(targetUser)) {
-            return message.reply(`El usuario **${targetUser}** ya se encuentra registrado en la party **${partyName}**.`);
+
+        const addedUsers = [];
+        const alreadyInParty = [];
+
+        for (const user of args) {
+            if (party.members.has(user)) {
+                alreadyInParty.push(user);
+            } else {
+                party.members.add(user);
+                addedUsers.push(user);
+            }
         }
 
-        party.members.add(targetUser);
-        return message.reply(`➕ El usuario **${targetUser}** ha sido agregado a la party **${partyName}**. Integrantes actuales (${party.members.size}): ${Array.from(party.members).join(', ')}`);
+        let response = '';
+        if (addedUsers.length > 0) {
+            response += `➕ Agregado(s) a **${partyName}**: **${addedUsers.join(', ')}**.\n`;
+        }
+        if (alreadyInParty.length > 0) {
+            response += `⚠️ Ya estaban en la party: **${alreadyInParty.join(', ')}**.\n`;
+        }
+
+        response += `Integrantes actuales (${party.members.size}): ${Array.from(party.members).join(', ')}`;
+        return message.reply(response);
     }
 
     // 3. Salirse uno mismo: !salir [nombre_party]
@@ -97,7 +112,7 @@ client.on('messageCreate', async (message) => {
 
     // 4. Expulsar a otro usuario: !expulsar [nombre_party] [nombre_usuario]
     if (content.startsWith('!expulsar ')) {
-        const args = content.slice(10).trim().split(' ');
+        const args = content.slice(10).trim().split(/\s+/);
         if (args.length < 2) {
             return message.reply('Formato incorrecto. Usa: `!expulsar [nombre_party] [nombre_usuario]`');
         }
@@ -139,7 +154,7 @@ client.on('messageCreate', async (message) => {
 
     // 6. Registrar drops (1 o varios): !drop [party] [cantidad x] [item] [valor_unitario]
     if (content.startsWith('!drop ')) {
-        const args = content.slice(6).trim().split(' ');
+        const args = content.slice(6).trim().split(/\s+/);
         if (args.length < 3) {
             return message.reply('Formato incorrecto. Usa: `!drop [nombre_party] [nombre_item] [valor]` o `!drop [nombre_party] 3x [nombre_item] [valor_unitario]`');
         }
@@ -152,7 +167,6 @@ client.on('messageCreate', async (message) => {
         }
 
         let amount = 1;
-        // Detecta si el primer argumento del nombre del ítem especifica cantidad (ej: 5x o 5X)
         if (/^\d+[xX]$/.test(args[0])) {
             amount = parseInt(args.shift());
         }
@@ -164,7 +178,6 @@ client.on('messageCreate', async (message) => {
 
         const party = getParty(guildId, partyName);
         
-        // Registra los ítems según la cantidad especificada
         for (let i = 0; i < amount; i++) {
             party.drops.push({ item: itemName, value: value, collector: message.author.username });
         }
