@@ -91,7 +91,7 @@ client.on('messageCreate', async (message) => {
         return message.reply(response);
     }
 
-    // 2.1 Importar usuarios extrayendo menciones y nombres limpios (con filtro estricto)
+    // 2.1 Importar usuarios ignorando palabras clave de clases y metadatos
     if (content.startsWith('!importar ')) {
         const partyName = content.slice(10).trim();
         if (!partyName) {
@@ -109,13 +109,13 @@ client.on('messageCreate', async (message) => {
 
             const addedUsers = [];
 
-            // Lista estricta de palabras de clases, emojis o metadatos que NUNCA deben ser usuarios
+            // Lista de palabras clave / clases que el bot debe ignorar por completo
             const ignoredWords = [
-                'templar', 'tank', 'slayer', 'dps', 'arcanist', 'mage', 'arca', 'seraph', 'rm',
-                'cooldown', 'party', 'name', 'drop', 'ne', 'ankou', 'fiesta', 'ss'
+                'templar', 'tank', 'slayer', 'dps', 'arcanist', 'arcanista', 'mage', 'arca', 
+                'seraph', 'rm', 'cooldown', 'party', 'name', 'drop', 'ne', 'ankou', 'fiesta', 'ss'
             ];
 
-            // 1. Extrae las menciones reales de Discord detectadas por la API
+            // 1. Extrae las menciones reales de Discord
             const userMentions = targetMessage.mentions.users;
             for (const [userId, user] of userMentions) {
                 const mentionTag = `<@${userId}>`;
@@ -125,17 +125,10 @@ client.on('messageCreate', async (message) => {
                 }
             }
 
-            // 2. Analiza líneas buscando nombres de texto plano escritos después de los dos puntos
+            // 2. Analiza el texto plano ignorando las palabras de la lista `ignoredWords`
             const lines = textToParse.split('\n');
             for (const line of lines) {
-                const lowerLine = line.toLowerCase().trim();
-
-                // Ignora líneas enteras de metadatos del reporte
-                if (lowerLine.startsWith('cooldown') || lowerLine.startsWith('party name') || lowerLine.startsWith('drop') || !line.includes(':')) {
-                    continue;
-                }
-
-                // Limpia emojis de Discord y menciones crudas para evaluar el texto restante
+                // Limpia emojis de Discord y menciones crudas
                 let cleanLine = line.replace(/<a?:\w+:\d+>/g, '').replace(/<@!?\d+>/g, '');
                 const parts = cleanLine.split(':');
                 
@@ -147,7 +140,7 @@ client.on('messageCreate', async (message) => {
                         name = name.replace('@', '').trim();
                         const lowerName = name.toLowerCase();
 
-                        // Valida que el texto no esté vacío, no sea un número y no sea una palabra prohibida o de clase
+                        // Si el nombre no está vacío, no es un número y NO está en las palabras prohibidas
                         if (name && !ignoredWords.includes(lowerName) && !/^\d+$/.test(name)) {
                             if (!party.members.has(name)) {
                                 party.members.add(name);
@@ -296,7 +289,7 @@ client.on('messageCreate', async (message) => {
         report += `• **Integrantes (${memberCount}):** ${Array.from(party.members).join(', ')}\n`;
         report += `• **A cada uno le corresponde:** **${sharePerPerson.toLocaleString()}**\n\n`;
         report += `_Detalle de Drops_:\n`;
-        party.drops.forEach(d => {
+        party.drops.exports = party.drops.forEach(d => {
             report += `- ${d.item}: ${d.value.toLocaleString()} (${d.collector})\n`;
         });
 
