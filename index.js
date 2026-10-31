@@ -91,7 +91,7 @@ client.on('messageCreate', async (message) => {
         return message.reply(response);
     }
 
-    // 2.1 NUEVO: Importar usuarios desde un mensaje citado/respondido
+    // 2.1 Importar usuarios desde un mensaje citado/respondido
     if (content.startsWith('!importar ')) {
         const partyName = content.slice(10).trim();
         if (!partyName) {
@@ -104,47 +104,60 @@ client.on('messageCreate', async (message) => {
 
         try {
             const targetMessage = await message.channel.messages.fetch(message.reference.messageId);
-            const textToParse = targetMessage.content;
             const party = getParty(guildId, partyName);
 
             const addedUsers = [];
+            const alreadyInParty = [];
 
-            // Extrae menciones de usuarios de Discord directas (<@ID> o <@!ID>)
-            const userMentions = targetMessage.mentions.users.values();
-            for (const user of userMentions) {
+            // Menciones reales de Discord (<@ID>)
+            for (const user of targetMessage.mentions.users.values()) {
+                if (user.bot) continue; // ignora bots
                 const username = user.username;
-                if (!party.members.has(username)) {
+                if (party.members.has(username)) {
+                    alreadyInParty.push(username);
+                } else {
                     party.members.add(username);
                     addedUsers.push(username);
                 }
             }
 
-            // Analiza líneas con barras (ej: @Tioarturo/Tiapola/Tioficha) por si hay nombres escritos a mano
-            const lines = textToParse.split('\n');
+            // Nombres escritos a mano, ej: "Tank: Juan/Pedro/Luis"
+            const lines = targetMessage.content.split('\n');
             for (const line of lines) {
-                if (line.includes('/')) {
-                    // Extrae la parte posterior a los dos puntos o limpia las arrobas
-                    const cleanLine = line.replace(/<@\d+>/g, ''); // Remueve menciones técnicas si las hubiera
-                    const parts = cleanLine.split(':');
-                    if (parts.length > 1) {
-                        const namesPart = parts[1].trim();
-                        const subNames = namesPart.split('/');
-                        for (let name of subNames) {
-                            name = name.replace('@', '').trim();
-                            if (name && !party.members.has(name)) {
-                                party.members.add(name);
-                                addedUsers.push(name);
-                            }
-                        }
+                // Quita emojis personalizados <:nombre:id> / <a:nombre:id> y menciones
+                const cleanLine = line
+                    .replace(/<a?:\w+:\d+>/g, '')
+                    .replace(/<@!?\d+>/g, '')
+                    .trim();
+
+                // Solo líneas del tipo "Etiqueta: nombre1/nombre2"
+                const match = cleanLine.match(/^[^:]+:\s*(.+)$/);
+                if (!match) continue;
+
+                const namesPart = match[1];
+                if (!namesPart.includes('/')) continue;
+
+                for (let name of namesPart.split('/')) {
+                    name = name.replace('@', '').trim();
+                    if (!name) continue;
+                    if (party.members.has(name)) {
+                        if (!alreadyInParty.includes(name)) alreadyInParty.push(name);
+                    } else {
+                        party.members.add(name);
+                        addedUsers.push(name);
                     }
                 }
             }
 
-            if (addedUsers.length === 0) {
-                return message.reply('No se pudieron detectar nuevos usuarios válidos en el mensaje citado.');
+            if (addedUsers.length === 0 && alreadyInParty.length === 0) {
+                return message.reply('No se encontraron usuarios válidos en el mensaje citado.');
             }
 
-            return message.reply(`📥 **¡Importación exitosa a ${partyName}!**\nSe añadieron: ${addedUsers.join(', ')}\nIntegrantes totales (${party.members.size}): ${Array.from(party.members).join(', ')}`);
+            let response = `📥 **Importación a ${partyName}**\n`;
+            if (addedUsers.length > 0) response += `➕ Añadidos: ${addedUsers.join(', ')}\n`;
+            if (alreadyInParty.length > 0) response += `⚠️ Ya estaban: ${alreadyInParty.join(', ')}\n`;
+            response += `Integrantes totales (${party.members.size}): ${Array.from(party.members).join(', ')}`;
+            return message.reply(response);
 
         } catch (error) {
             console.error(error);
@@ -238,7 +251,7 @@ client.on('messageCreate', async (message) => {
         }
 
         const party = getParty(guildId, partyName);
-        
+
         for (let i = 0; i < amount; i++) {
             party.drops.push({ item: itemName, value: value, collector: message.author.username });
         }
@@ -304,7 +317,7 @@ client.on('messageCreate', async (message) => {
     if (content.startsWith('!resetparty ')) {
         const partyName = content.slice(12).trim();
         const parties = serverParties.get(guildId);
-        
+
         if (parties && parties.has(partyName)) {
             parties.delete(partyName);
             return message.reply(`🔄 La party **${partyName}** ha sido eliminada y reiniciada.`);
