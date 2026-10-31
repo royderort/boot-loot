@@ -91,7 +91,7 @@ client.on('messageCreate', async (message) => {
         return message.reply(response);
     }
 
-    // 2.1 Importar usuarios extrayendo menciones y nombres limpios de forma interactiva
+    // 2.1 Importar usuarios extrayendo menciones y nombres de forma robusta
     if (content.startsWith('!importar ')) {
         const partyName = content.slice(10).trim();
         if (!partyName) {
@@ -109,32 +109,38 @@ client.on('messageCreate', async (message) => {
 
             const addedUsers = [];
 
-            // 1. Extrae las menciones reales de Discord usando la propiedad .toString() del usuario
-            // Esto genera automáticamente el formato interactivo de mención que Discord renderiza como @Nombre
-            const userMentions = targetMessage.mentions.users.values();
-            for (const user of userMentions) {
-                const mentionTag = user.toString(); // Esto da formato <@ID> que Discord pinta como mención
+            // 1. Extrae las menciones reales de Discord detectadas por la API
+            const userMentions = targetMessage.mentions.users;
+            for (const [userId, user] of userMentions) {
+                const mentionTag = `<@${userId}>`;
                 if (!party.members.has(mentionTag)) {
                     party.members.add(mentionTag);
                     addedUsers.push(user.username);
                 }
             }
 
-            // 2. Busca texto plano que tenga '@' (ej: @Ikiguy o @Tioarturo/Tiapola)
+            // 2. Analiza líneas buscando texto plano con '@' o nombres sueltos después de los dos puntos
             const lines = textToParse.split('\n');
             for (const line of lines) {
-                if (line.includes('@')) {
-                    const parts = line.split(':');
+                if (line.includes(':')) {
+                    // Limpia emojis de Discord y menciones crudas para quedarnos con el texto del rol
+                    let cleanLine = line.replace(/<a?:\w+:\d+>/g, '').replace(/<@!?\d+>/g, '');
+                    const parts = cleanLine.split(':');
+                    
                     if (parts.length > 1) {
                         const namesPart = parts.slice(1).join(':').trim();
                         const subNames = namesPart.split(/[\/\s]+/);
 
                         for (let name of subNames) {
-                            if (name.includes('@')) {
-                                let cleanName = name.replace('@', '').trim();
-                                if (cleanName && !party.members.has(cleanName)) {
-                                    party.members.add(cleanName);
-                                    addedUsers.push(cleanName);
+                            name = name.replace('@', '').trim();
+                            // Si hay un nombre escrito a mano (ej: Ikiguy o Otac) que no sea una clase ni un número
+                            const ignoredWords = ['tank', 'dps', 'mage', 'arca', 'rm', 'arcanist', 'slayer', 'templar', 'seraph', 'cooldown', 'party', 'name', 'drop'];
+                            const lowerName = name.toLowerCase();
+
+                            if (name && !ignoredWords.includes(lowerName) && !/^\d+$/.test(name)) {
+                                if (!party.members.has(name)) {
+                                    party.members.add(name);
+                                    addedUsers.push(name);
                                 }
                             }
                         }
