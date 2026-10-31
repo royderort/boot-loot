@@ -91,7 +91,7 @@ client.on('messageCreate', async (message) => {
         return message.reply(response);
     }
 
-    // 2.1 Importar usuarios extrayendo nombres y menciones limpias
+    // 2.1 Importar usuarios extrayendo menciones y nombres limpios de forma interactiva
     if (content.startsWith('!importar ')) {
         const partyName = content.slice(10).trim();
         if (!partyName) {
@@ -109,12 +109,13 @@ client.on('messageCreate', async (message) => {
 
             const addedUsers = [];
 
-            // 1. Extrae las menciones reales de Discord y usa su formato interactivo (<@ID>)
+            // 1. Extrae las menciones reales de Discord usando la propiedad .toString() del usuario
+            // Esto genera automáticamente el formato interactivo de mención que Discord renderiza como @Nombre
             const userMentions = targetMessage.mentions.users.values();
             for (const user of userMentions) {
-                const userMentionString = `<@${user.id}>`;
-                if (!party.members.has(userMentionString)) {
-                    party.members.add(userMentionString);
+                const mentionTag = user.toString(); // Esto da formato <@ID> que Discord pinta como mención
+                if (!party.members.has(mentionTag)) {
+                    party.members.add(mentionTag);
                     addedUsers.push(user.username);
                 }
             }
@@ -142,7 +143,7 @@ client.on('messageCreate', async (message) => {
             }
 
             if (addedUsers.length === 0) {
-                return message.reply('No se pudieron detectar usuarios con `@` en el mensaje citado.');
+                return message.reply('No se pudieron detectar usuarios válidos en el mensaje citado.');
             }
 
             return message.reply(`📥 **¡Importación exitosa a ${partyName}!**\nSe añadieron: ${addedUsers.join(', ')}\nIntegrantes totales (${party.members.size}): ${Array.from(party.members).join(', ')}`);
