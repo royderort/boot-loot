@@ -1,0 +1,132 @@
+require('dotenv').config();
+const { Client, GatewayIntentBits } = require('discord.js');
+
+const client = new Client({
+    intents: [
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.MessageContent,
+    ]
+});
+
+// Estructura: guildId => Map(partyName => { members: Set(), drops: [] })
+const serverParties = new Map();
+
+// Función auxiliar para obtener o crear una party automáticamente
+function getParty(guildId, partyName) {
+    if (!serverParties.has(guildId)) {
+        serverParties.set(guildId, new Map());
+    }
+    const parties = serverParties.get(guildId);
+    if (!parties.has(partyName)) {
+        parties.set(partyName, { members: new Set(), drops: [] });
+    }
+    return parties.get(partyName);
+}
+
+client.once('clientReady', () => {
+    console.log(`¡Bot encendido como ${client.user.tag}!`);
+});
+
+client.on('messageCreate', async (message) => {
+    if (message.author.bot) return;
+
+    const content = message.content;
+    const guildId = message.guild.id;
+
+    // 1. Unirse a una party: !unirse [nombre_party]
+    if (content.startsWith('!unirse ')) {
+        const partyName = content.slice(8).trim();
+        if (!partyName) return message.reply('Debes indicar el nombre de la party. Ejemplo: `!unirse RaidBoss`');
+
+        const party = getParty(guildId, partyName);
+        party.members.add(message.author.username);
+        return message.reply(`¡Te has unido a la party **${partyName}**! Integrantes actuales (${party.members.size}): ${Array.from(party.members).join(', ')}`);
+    }
+
+    // 2. Registrar un drop: !drop [nombre_party] [nombre_item] [valor]
+    // Ejemplo: !drop RaidBoss Espada Magica 1500000
+    if (content.startsWith('!drop ')) {
+        const args = content.slice(6).trim().split(' ');
+        if (args.length < 3) {
+            return message.reply('Formato incorrecto. Usa: `!drop [nombre_party] [nombre_item] [valor]`');
+        }
+
+        const partyName = args.shift();
+        const value = parseInt(args.pop());
+        const itemName = args.join(' ');
+
+        if (isNaN(value)) {
+            return message.reply('El valor del ítem debe ser un número válido.');
+        }
+
+        const party = getParty(guildId, partyName);
+        party.drops.push({ item: itemName, value: value, collector: message.author.username });
+
+        return message.reply(`📦 Drop registrado en **${partyName}**: **${itemName}** por **${value.toLocaleString()}** (Obtenido por ${message.author.username})`);
+    }
+
+    // 3. Calcular cuentas de una party: !repartir [nombre_party]
+    if (content.startsWith('!repartir ')) {
+        const partyName = content.slice(10).trim();
+        if (!partyName) return message.reply('Debes indicar el nombre de la party a repartir. Ejemplo: `!repartir RaidBoss`');
+
+        const parties = serverParties.get(guildId);
+        if (!parties || !parties.has(partyName)) {
+            return message.reply(`La party **${partyName}** no existe o no tiene datos registrados.`);
+        }
+
+        const party = parties.get(partyName);
+        if (party.members.size === 0) {
+            return message.reply(`No hay miembros registrados en la party **${partyName}**.`);
+        }
+        if (party.drops.length === 0) {
+            return message.reply(`No hay drops registrados en la party **${partyName}**.`);
+        }
+
+        let totalValue = party.drops.reduce((sum, drop) => sum + drop.value, 0);
+        let memberCount = party.members.size;
+        let sharePerPerson = Math.floor(totalValue / memberCount);
+
+        let report = `💰 **Reporte de Loot: ${partyName}** 💰\n`;
+        report += `• **Valor Total:** ${totalValue.toLocaleString()}\n`;
+        report += `• **Integrantes (${memberCount}):** ${Array.from(party.members).join(', ')}\n`;
+        report += `• **A cada uno le corresponde:** **${sharePerPerson.toLocaleString()}**\n\n`;
+        report += `_Detalle de Drops_:\n`;
+        party.drops.forEach(d => {
+            report += `- ${d.item}: ${d.value.toLocaleString()} (${d.collector})\n`;
+        });
+
+        return message.channel.send(report);
+    }
+
+    // 4. Listar partys activas en el servidor: !listpartys
+    if (content === '!listpartys') {
+        const parties = serverParties.get(guildId);
+        if (!parties || parties.size === 0) {
+            return message.reply('No hay partys activas en este servidor.');
+        }
+
+        let listMsg = `📋 **Partys Activas en el Servidor** 📋\n`;
+        parties.forEach((data, name) => {
+            listMsg += `- **${name}**: ${data.members.size} miembros, ${data.drops.length} drops\n`;
+        });
+
+        return message.reply(listMsg);
+    }
+
+    // 5. Borrar una party específica: !resetparty [nombre_party]
+    if (content.startsWith('!resetparty ')) {
+        const partyName = content.slice(12).trim();
+        const parties = serverParties.get(guildId);
+        
+        if (parties && parties.has(partyName)) {
+            parties.delete(partyName);
+            return message.reply(`🔄 La party **${partyName}** ha sido eliminada y reiniciada.`);
+        } else {
+            return message.reply(`La party **${partyName}** no fue encontrada.`);
+        }
+    }
+});
+
+client.login(process.env.TOKEN);
